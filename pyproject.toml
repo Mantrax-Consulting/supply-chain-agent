@@ -1,0 +1,17 @@
+[project]
+name = "supply-chain-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "google-api-python-client>=2.192.0",
+    "langchain>=1.2.10",
+    "langchain-anthropic>=1.3.4",
+    "langchain-community>=0.4.1",
+    "langchain-core>=1.2.17",
+    "langchain-google-genai>=4.2.1",
+    "langchain-openai>=1.1.10",
+    "langsmith>=0.7.14",
+    "python-dotenv>=1.2.2",
+]
