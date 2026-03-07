@@ -55,26 +55,18 @@ Before setup, make sure you have accounts and keys for the following.
 | Anthropic | https://console.anthropic.com | `ANTHROPIC_API_KEY` |
 | Google AI Studio | https://aistudio.google.com | `GOOGLE_API_KEY` |
 
-### 2. Google Custom Search — required regardless of LLM provider
+### 2. Tavily Search — required regardless of LLM provider
 
-The agent uses Google Custom Search to fetch real-time web results. Without
-it, the agent has no tools and can only answer from its training data —
-which has a cutoff date and cannot find current disruptions.
+The agent uses Tavily to fetch real-time web results. Tavily is built
+specifically for AI agents — cleaner results, simpler setup, and one API
+key is all you need.
 
-You need two things:
+1. Go to https://tavily.com
+2. Sign up — email and password only, no credit card required
+3. Your API key is shown immediately on the dashboard
+4. Paste into `TAVILY_API_KEY` in your `.env`
 
-**Search Engine ID:**
-1. Go to https://programmablesearchengine.google.com
-2. Click **Add** → give it any name → select **Search the entire web**
-3. Copy the **Search engine ID** → paste into `GOOGLE_CSE_ID` in your `.env`
-
-**Google API Key:**
-1. Go to https://console.cloud.google.com
-2. Enable the **Custom Search API**
-3. Go to Credentials → Create API key
-4. Paste into `GOOGLE_CSE_API_KEY` in your `.env`
-
-Both are free up to 100 searches per day — sufficient for workshop use.
+Free tier includes 1,000 searches/month — more than enough for a workshop.
 
 ### 3. LangSmith — optional but recommended
 

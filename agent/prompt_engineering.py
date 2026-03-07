@@ -19,8 +19,8 @@ Why this matters:
 
 from langchain.prompts import PromptTemplate
 from langchain.agents import AgentExecutor, create_react_agent
-from langchain_community.utilities import GoogleSearchAPIWrapper
 from langchain_community.tools import Tool
+from langchain_community.tools.tavily_search import TavilySearchResults
 import re
 import json
 from dataclasses import dataclass, field
