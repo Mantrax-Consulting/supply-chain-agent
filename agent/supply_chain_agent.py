@@ -12,6 +12,7 @@ Key Concepts Demonstrated:
 """
 
 import os
+from dotenv import load_dotenv
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.prompts import PromptTemplate
 from langchain_community.utilities import GoogleSearchAPIWrapper
@@ -19,9 +20,25 @@ from langchain_community.tools import Tool
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.schema import AgentAction, AgentFinish, LLMResult
 
+# Load .env file — must happen before any API clients are initialised
+load_dotenv()
+
+# Wire up LangSmith observability if configured
+# These must be set as environment variables before LangChain is used
+if os.getenv("LANGCHAIN_API_KEY"):
+    os.environ["LANGCHAIN_TRACING_V2"] = os.getenv("LANGCHAIN_TRACING_V2", "false")
+    os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY", "")
+    os.environ["LANGCHAIN_PROJECT"] = os.getenv(
+        "LANGCHAIN_PROJECT", "supply-chain-monitor"
+    )
+    os.environ["LANGCHAIN_ENDPOINT"] = os.getenv(
+        "LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com"
+    )
+
 # ─── Step 1: Observability — Custom Callback Handler ──────────────────────────
 # This runs automatically at every step of the agent's reasoning cycle.
 # Think of it as a "flight recorder" for your agent.
+
 
 class SupplyChainObservabilityHandler(BaseCallbackHandler):
     """Logs every thought, action, and result the agent produces."""
@@ -57,15 +74,16 @@ class SupplyChainObservabilityHandler(BaseCallbackHandler):
 # This function is the key to avoiding vendor lock-in.
 # Change ONE line in config.py to switch between GPT-4, Claude, or Gemini.
 
+
 def get_llm(provider: str = "openai", model_name: str = None, temperature: float = 0.0):
     """
     Factory function — returns any LangChain-compatible LLM.
-    
+
     Supported providers (add more anytime):
       - "openai"    → Requires OPENAI_API_KEY
-      - "anthropic" → Requires ANTHROPIC_API_KEY  
+      - "anthropic" → Requires ANTHROPIC_API_KEY
       - "google"    → Requires GOOGLE_API_KEY
-    
+
     Workshop Note:
       The agent code below NEVER references a specific provider.
       It only receives an LLM object. This is the abstraction that
@@ -74,18 +92,21 @@ def get_llm(provider: str = "openai", model_name: str = None, temperature: float
     """
     if provider == "openai":
         from langchain_openai import ChatOpenAI
+
         return ChatOpenAI(
             model=model_name or "gpt-4o-mini",
             temperature=temperature,
         )
     elif provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
+
         return ChatAnthropic(
             model=model_name or "claude-3-haiku-20240307",
             temperature=temperature,
         )
     elif provider == "google":
         from langchain_google_genai import ChatGoogleGenerativeAI
+
         return ChatGoogleGenerativeAI(
             model=model_name or "gemini-1.5-flash",
             temperature=temperature,
@@ -99,17 +120,31 @@ def get_llm(provider: str = "openai", model_name: str = None, temperature: float
 
 # ─── Step 3: Tools — What the Agent Can Do ────────────────────────────────────
 
+
 def build_tools() -> list:
     """
     Returns a list of tools available to the agent.
-    
+
     Tools are how the agent interacts with the outside world.
     Each tool has:
       - name: what the agent calls it
       - func: the Python function to run
       - description: what the LLM reads to decide when to use it
     """
-    search = GoogleSearchAPIWrapper()
+    google_api_key = os.getenv("GOOGLE_CSE_API_KEY")
+    google_cse_id = os.getenv("GOOGLE_CSE_ID")
+
+    if not google_api_key or not google_cse_id:
+        raise EnvironmentError(
+            "Missing Google Search credentials in .env file."
+            " Required: GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID"
+            " See README.md for setup instructions."
+        )
+
+    search = GoogleSearchAPIWrapper(
+        google_api_key=google_api_key,
+        google_cse_id=google_cse_id,
+    )
 
     supply_chain_search = Tool(
         name="supply_chain_search",
@@ -157,17 +192,18 @@ def build_tools() -> list:
 # Before the agent sends any alert, it must get human approval.
 # This is the core HITL pattern — the agent pauses and asks a human.
 
+
 def human_approval_gate(risk_summary: str, risk_level: str) -> bool:
     """
     Pauses execution and asks a human to approve or reject an alert.
-    
+
     In production, this could:
       - Send a Slack message and wait for a reaction
       - Open a dashboard approval screen
       - Send an email with an approve/reject link
-    
+
     For this workshop, we use simple console input.
-    
+
     Returns:
       True  → Human approved, proceed with alert
       False → Human rejected, discard alert
@@ -180,10 +216,14 @@ def human_approval_gate(risk_summary: str, risk_level: str) -> bool:
     print("\n" + "─" * 60)
 
     while True:
-        response = input(
-            "\n❓ Do you want to send this alert to the operations team?\n"
-            "   Type 'yes' to approve or 'no' to discard: "
-        ).strip().lower()
+        response = (
+            input(
+                "\n❓ Do you want to send this alert to the operations team?\n"
+                "   Type 'yes' to approve or 'no' to discard: "
+            )
+            .strip()
+            .lower()
+        )
 
         if response in ("yes", "y"):
             print("✅  Alert approved. Sending to operations team...")
@@ -199,7 +239,8 @@ def human_approval_gate(risk_summary: str, risk_level: str) -> bool:
 # The ReAct prompt is the "brain" of the agent.
 # ReAct = Reason + Act. The agent alternates between thinking and doing.
 
-SUPPLY_CHAIN_PROMPT = PromptTemplate.from_template("""
+SUPPLY_CHAIN_PROMPT = PromptTemplate.from_template(
+    """
 You are a Supply Chain Risk Analyst AI. Your job is to monitor risks
 that could disrupt our company's supply chain and logistics operations.
 
@@ -235,15 +276,17 @@ Begin!
 
 Question: {input}
 {agent_scratchpad}
-""")
+"""
+)
 
 
 # ─── Step 6: Build and Run the Agent ─────────────────────────────────────────
 
+
 def build_agent(provider: str = "openai", model_name: str = None):
     """
     Assembles the full agent from its parts.
-    
+
     This is the "assembly" function — it wires together:
       1. The LLM (swappable via provider argument)
       2. The tools (search capabilities)
@@ -266,8 +309,8 @@ def build_agent(provider: str = "openai", model_name: str = None):
         agent=agent,
         tools=tools,
         callbacks=[observability],
-        verbose=True,          # Shows the full chain of thought
-        max_iterations=6,      # Safety limit — prevents infinite loops
+        verbose=True,  # Shows the full chain of thought
+        max_iterations=6,  # Safety limit — prevents infinite loops
         handle_parsing_errors=True,  # Gracefully handles malformed LLM output
     )
 
@@ -282,13 +325,13 @@ def run_supply_chain_monitor(
 ):
     """
     Main entry point — runs the agent on a supply chain query.
-    
+
     Args:
       query:            The risk question to investigate
       provider:         LLM provider ("openai", "anthropic", "google")
       model_name:       Specific model (optional — uses defaults if None)
       require_approval: If True, triggers Human-in-the-Loop before alerting
-    
+
     Example:
       run_supply_chain_monitor(
           query="Are there any port delays in Vancouver affecting lumber imports?",
@@ -340,7 +383,7 @@ if __name__ == "__main__":
             "components from Southeast Asia, particularly semiconductor shortages "
             "or shipping delays from Taiwan or South Korea."
         ),
-        provider="openai",         # ← Change this to switch models
+        provider="openai",  # ← Change this to switch models
         model_name="gpt-4o-mini",  # ← Or change this for a specific model
-        require_approval=True,     # ← Set False to skip Human-in-the-Loop
+        require_approval=True,  # ← Set False to skip Human-in-the-Loop
     )
