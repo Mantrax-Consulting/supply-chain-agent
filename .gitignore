@@ -6,8 +6,21 @@ dist/
 wheels/
 *.egg-info
 
-# secrets
+# Secrets
 .env
 
 # Virtual environments
 .venv
+
+# macOS
+.DS_Store
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# Editor folders
+.vscode/
+.idea/
+
+# uv
+.python-version
