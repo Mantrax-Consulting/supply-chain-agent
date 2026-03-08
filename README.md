@@ -98,7 +98,7 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ### Step 2 — Clone and set up
 
 ```bash
-git clone https://github.com/your-org/supply-chain-agent.git
+git clone https://github.com/Mantrax-Consulting/supply-chain-agent.git
 cd supply-chain-agent
 uv sync
 ```
