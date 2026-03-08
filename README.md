@@ -14,7 +14,7 @@ and Prompt Engineering & Agent Reliability.
 Given a query like _"Are there any port delays in Vancouver affecting lumber shipments?"_,
 the agent will:
 
-1. **Search** the web for current information using Google Custom Search
+1. **Search** the web for current information using Tavily Search
 2. **Reason** about the risk using a ReAct loop (Thought → Action → Observation)
 3. **Assess** severity: LOW / MEDIUM / HIGH
 4. **Parse** the result into a structured object usable by downstream systems
