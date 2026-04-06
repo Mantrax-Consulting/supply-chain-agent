@@ -25,6 +25,7 @@ import re
 import json
 from dataclasses import dataclass, field
 from typing import Optional
+from .supply_chain_agent import get_llm, build_tools, SupplyChainObservabilityHandler
 
 
 # ─── Technique 1: Output Format Enforcement ───────────────────────────────────
@@ -35,7 +36,8 @@ from typing import Optional
 # The fix: be brutally explicit about format in the prompt.
 # Show the agent an example of a COMPLETE, correct response cycle.
 
-PROMPT_V1_WEAK = PromptTemplate.from_template("""
+PROMPT_V1_WEAK = PromptTemplate.from_template(
+    """
 You are a supply chain analyst. Use tools to find risks.
 
 Tools: {tools}
@@ -43,13 +45,15 @@ Tool names: {tool_names}
 
 Answer the question: {input}
 {agent_scratchpad}
-""")
+"""
+)
 # ❌ Problem: No format instructions. The LLM will sometimes just answer
 # directly without using tools, or output a narrative instead of
 # Thought/Action/Observation. This causes OutputParserException.
 
 
-PROMPT_V2_FORMAT_ENFORCED = PromptTemplate.from_template("""
+PROMPT_V2_FORMAT_ENFORCED = PromptTemplate.from_template(
+    """
 You are a Supply Chain Risk Analyst. Your ONLY job is to find supply chain risks.
 
 Tools available:
@@ -73,7 +77,8 @@ Begin.
 
 Question: {input}
 {agent_scratchpad}
-""")
+"""
+)
 # ✅ What changed:
 #   - "You MUST use EXACTLY this format" — direct instruction, not suggestion
 #   - Tool names listed inline in the Action line — agent knows its options
@@ -86,7 +91,8 @@ Question: {input}
 # produce focused, reliable outputs. Think of this as giving the agent
 # a job description, not just a job title.
 
-PROMPT_V3_ROLE_CONSTRAINED = PromptTemplate.from_template("""
+PROMPT_V3_ROLE_CONSTRAINED = PromptTemplate.from_template(
+    """
 You are a Supply Chain Risk Analyst at a Canadian manufacturing company.
 You monitor risks to our supplier network, shipping routes, and raw material sources.
 
@@ -115,7 +121,8 @@ CONFIDENCE: [HIGH if multiple sources confirm / LOW if only one source]
 
 Question: {input}
 {agent_scratchpad}
-""")
+"""
+)
 # ✅ What changed from V2:
 #   - Specific company context ("Canadian manufacturing company") anchors responses
 #   - "Without exception" on constraints signals non-negotiable rules
@@ -164,7 +171,9 @@ YOUR CONSTRAINTS:
 Tools: {tools}
 Available tool names: {tool_names}
 
-""" + FEW_SHOT_EXAMPLE + """
+"""
+    + FEW_SHOT_EXAMPLE
+    + """
 
 You MUST use EXACTLY this format:
 Thought: [reasoning]
@@ -189,9 +198,11 @@ Question: {input}
 # reliably into a Python dict. This is what makes the agent's output
 # usable by downstream systems (databases, Slack, dashboards).
 
+
 @dataclass
 class RiskAssessment:
     """Structured output from the agent — safe to store and display."""
+
     severity: str = "UNKNOWN"
     summary: str = ""
     recommendation: str = ""
@@ -213,17 +224,27 @@ def parse_agent_output(raw_output: str) -> RiskAssessment:
 
     try:
         # Extract SEVERITY
-        sev_match = re.search(r"SEVERITY:\s*(LOW|MEDIUM|HIGH)", raw_output, re.IGNORECASE)
+        sev_match = re.search(
+            r"SEVERITY:\s*(LOW|MEDIUM|HIGH)", raw_output, re.IGNORECASE
+        )
         if sev_match:
             result.severity = sev_match.group(1).upper()
 
         # Extract SUMMARY
-        sum_match = re.search(r"SUMMARY:\s*(.+?)(?=RECOMMENDATION:|CONFIDENCE:|$)", raw_output, re.DOTALL | re.IGNORECASE)
+        sum_match = re.search(
+            r"SUMMARY:\s*(.+?)(?=RECOMMENDATION:|CONFIDENCE:|$)",
+            raw_output,
+            re.DOTALL | re.IGNORECASE,
+        )
         if sum_match:
             result.summary = sum_match.group(1).strip()
 
         # Extract RECOMMENDATION
-        rec_match = re.search(r"RECOMMENDATION:\s*(.+?)(?=CONFIDENCE:|$)", raw_output, re.DOTALL | re.IGNORECASE)
+        rec_match = re.search(
+            r"RECOMMENDATION:\s*(.+?)(?=CONFIDENCE:|$)",
+            raw_output,
+            re.DOTALL | re.IGNORECASE,
+        )
         if rec_match:
             result.recommendation = rec_match.group(1).strip()
 
@@ -262,9 +283,11 @@ def format_assessment_for_display(assessment: RiskAssessment) -> str:
 # you should know: what changed, when, why, and whether it improved outcomes.
 # This is the difference between prompt engineering and prompt guessing.
 
+
 @dataclass
 class PromptVersion:
     """Tracks a prompt version with metadata."""
+
     version: str
     prompt: PromptTemplate
     description: str
@@ -325,7 +348,9 @@ def get_prompt(version: str = "v4") -> PromptTemplate:
       Compare: output consistency, parse success rate, hallucination rate.
     """
     if version not in PROMPT_REGISTRY:
-        raise ValueError(f"Unknown prompt version '{version}'. Available: {list(PROMPT_REGISTRY.keys())}")
+        raise ValueError(
+            f"Unknown prompt version '{version}'. Available: {list(PROMPT_REGISTRY.keys())}"
+        )
     pv = PROMPT_REGISTRY[version]
     print(f"📝 Using prompt {pv.version}: {pv.description}")
     if pv.known_failure_modes:
@@ -334,6 +359,7 @@ def get_prompt(version: str = "v4") -> PromptTemplate:
 
 
 # ─── Demo: Run and Compare Prompt Versions ────────────────────────────────────
+
 
 def run_with_prompt_version(
     query: str,
@@ -346,11 +372,6 @@ def run_with_prompt_version(
 
     Use this in the workshop to show how prompt version affects reliability.
     """
-    # Import here to avoid circular dependency with supply_chain_agent.py
-    import sys
-    import os
-    sys.path.insert(0, os.path.dirname(__file__))
-    from supply_chain_agent import get_llm, build_tools, SupplyChainObservabilityHandler
 
     prompt = get_prompt(version=prompt_version)
     llm = get_llm(provider=provider, model_name=model_name)
@@ -362,7 +383,7 @@ def run_with_prompt_version(
         agent=agent,
         tools=tools,
         callbacks=[handler],
-        verbose=False,           # Keep output clean for the comparison demo
+        verbose=False,  # Keep output clean for the comparison demo
         max_iterations=6,
         handle_parsing_errors=True,
     )
@@ -407,6 +428,12 @@ if __name__ == "__main__":
     print("═" * 55)
     print(f"{'Metric':<25} {'V1':<15} {'V4':<15}")
     print(f"{'─'*25} {'─'*15} {'─'*15}")
-    print(f"{'Parse succeeded':<25} {str(result_v1.parse_succeeded):<15} {str(result_v4.parse_succeeded):<15}")
-    print(f"{'Severity extracted':<25} {result_v1.severity:<15} {result_v4.severity:<15}")
-    print(f"{'Confidence reported':<25} {result_v1.confidence:<15} {result_v4.confidence:<15}")
+    print(
+        f"{'Parse succeeded':<25} {str(result_v1.parse_succeeded):<15} {str(result_v4.parse_succeeded):<15}"
+    )
+    print(
+        f"{'Severity extracted':<25} {result_v1.severity:<15} {result_v4.severity:<15}"
+    )
+    print(
+        f"{'Confidence reported':<25} {result_v1.confidence:<15} {result_v4.confidence:<15}"
+    )
