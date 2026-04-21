@@ -12,13 +12,15 @@ Key Concepts Demonstrated:
 """
 
 import os
+from typing import Optional
 from dotenv import load_dotenv
+from langchain_core.agents import AgentAction, AgentFinish
+from langchain_core.callbacks.base import BaseCallbackHandler
+from langchain_core.outputs import LLMResult
+from langchain_core.prompts import PromptTemplate
+from langchain_core.tools import Tool
 from langchain.agents import AgentExecutor, create_react_agent
-from langchain.prompts import PromptTemplate
-from langchain_community.tools import Tool
-from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain.callbacks.base import BaseCallbackHandler
-from langchain.schema import AgentAction, AgentFinish, LLMResult
+from langchain_tavily import TavilySearch
 
 # Load .env file — must happen before any API clients are initialised
 load_dotenv()
@@ -44,31 +46,43 @@ class SupplyChainObservabilityHandler(BaseCallbackHandler):
     """Logs every thought, action, and result the agent produces."""
 
     def __init__(self):
-        self.iteration = 0  # ← add this counter
+        self.iteration = 0
 
-    def on_llm_start(self, serialized, prompts, **kwargs):
+    def on_chain_start(self, serialized, inputs, **kwargs):
+        # Guard against None — LangChain passes None for some internal chains
+        if serialized is None:
+            return
+        name = serialized.get("name", "Chain")
+        print(f"\n🔗 [CHAIN] Starting: {name}")
+
+    def on_chat_model_start(self, serialized, messages, **kwargs):
+        # Fires for chat models (ChatOpenAI, ChatAnthropic, ChatGoogleGenerativeAI)
+        # on_llm_start does NOT fire for chat models — this one does
         print("\n🧠 [THINK] Agent is reasoning...")
 
     def on_llm_end(self, response: LLMResult, **kwargs):
-        text = response.generations[0][0].text if response.generations else ""
-        if text:
-            print(f"💭 [THOUGHT] {text[:200]}...")
+        try:
+            text = response.generations[0][0].text if response.generations else ""
+            if text:
+                print(f"💭 [THOUGHT] {text[:200]}...")
+        except (IndexError, AttributeError):
+            pass
 
     def on_tool_start(self, serialized, input_str, **kwargs):
-        self.iteration += 1  # ← tick the counter on every tool call
-        tool_name = serialized.get("name", "unknown")
-        print(f"\n🔄 [ITERATION {self.iteration}]")  # ← show it
+        self.iteration += 1
+        tool_name = serialized.get("name", "unknown") if serialized else "unknown"
+        print(f"\n🔄 [ITERATION {self.iteration}]")
         print(f"🔧 [ACTION] Using tool: {tool_name}")
-        print(f"   Input: {input_str[:150]}")
+        print(f"   Input: {str(input_str)[:150]}")
 
     def on_tool_end(self, output, **kwargs):
         print(f"📄 [RESULT] {str(output)[:300]}...")
 
     def on_agent_action(self, action: AgentAction, **kwargs):
-        print(f"\n⚡ [STEP] Action → {action.tool}: {action.tool_input[:100]}")
+        print(f"\n⚡ [STEP] Action → {action.tool}: {str(action.tool_input)[:100]}")
 
     def on_agent_finish(self, finish: AgentFinish, **kwargs):
-        print(f"\n✅ [DONE] Finished in {self.iteration} iteration(s).")  # ← summary
+        print(f"\n✅ [DONE] Finished in {self.iteration} iteration(s).")
         print(f"   Final Answer: {finish.return_values.get('output', '')[:300]}")
 
     def on_chain_error(self, error, **kwargs):
@@ -80,7 +94,9 @@ class SupplyChainObservabilityHandler(BaseCallbackHandler):
 # Change ONE line in config.py to switch between GPT-4, Claude, or Gemini.
 
 
-def get_llm(provider: str = "openai", model_name: str = None, temperature: float = 0.0):
+def get_llm(
+    provider: str = "openai", model_name: Optional[str] = None, temperature: float = 0.0
+):
     """
     Factory function — returns any LangChain-compatible LLM.
 
@@ -103,17 +119,19 @@ def get_llm(provider: str = "openai", model_name: str = None, temperature: float
             temperature=temperature,
         )
     elif provider == "anthropic":
-        from langchain_anthropic import ChatAnthropic
+        from langchain_anthropic import ChatAnthropic  # type: ignore - lazy imports, pylance can't resolve
 
         return ChatAnthropic(
-            model=model_name or "claude-3-haiku-20240307",
+            model_name=model_name or "claude-3-5-haiku-20241022",
             temperature=temperature,
+            timeout=None,
+            stop=None,
         )
     elif provider == "google":
-        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_google_genai import ChatGoogleGenerativeAI  # type: ignore - lazy imports, pylance can't resolve
 
         return ChatGoogleGenerativeAI(
-            model=model_name or "gemini-1.5-flash",
+            model=model_name or "gemini-3-flash-preview",
             temperature=temperature,
         )
     else:
@@ -140,24 +158,34 @@ def build_tools() -> list:
     It returns clean, relevant results without requiring a search engine ID.
     One API key is all you need: https://tavily.com
     """
-    tavily_api_key = os.getenv("TAVILY_API_KEY")
-
-    if not tavily_api_key:
+    if not os.getenv("TAVILY_API_KEY"):
         raise EnvironmentError(
             "Missing TAVILY_API_KEY in .env file."
             " Sign up free at https://tavily.com to get your key."
         )
 
-    # TavilySearchResults returns structured results with title, url, and content
-    # max_results=5 keeps token usage reasonable while giving enough context
-    tavily = TavilySearchResults(
+    # TavilySearch is loaded from the environment automatically via TAVILY_API_KEY
+    # time_range="month" keeps results current and relevant
+    tavily = TavilySearch(
         max_results=5,
-        tavily_api_key=tavily_api_key,
+        search_depth="advanced",
+        include_answer=True,
+        include_raw_content=False,
+        time_range="month",
+        topic="news",
     )
+
+    def _search(query: str) -> str:
+        """Wraps tavily.invoke() to return a plain string for Tool compatibility."""
+        try:
+            result = tavily.invoke(query)
+            return str(result)
+        except Exception as e:
+            return f"Search failed: {str(e)}"
 
     supply_chain_search = Tool(
         name="supply_chain_search",
-        func=tavily.run,
+        func=_search,
         description=(
             "Search the web for current supply chain news, disruptions, "
             "port delays, supplier financial issues, trade route problems, "
@@ -171,7 +199,7 @@ def build_tools() -> list:
         query = (
             f"{supplier_name} bankruptcy risk financial trouble layoffs 2024 2025 2026"
         )
-        return tavily.run(query)
+        return _search(query)
 
     supplier_risk_tool = Tool(
         name="check_supplier_risk",
@@ -185,7 +213,7 @@ def build_tools() -> list:
     def check_port_status(port_name: str) -> str:
         """Searches for port delays and congestion."""
         query = f"{port_name} port congestion delay strike closure today"
-        return tavily.run(query)
+        return _search(query)
 
     port_status_tool = Tool(
         name="check_port_status",
@@ -294,7 +322,7 @@ Question: {input}
 # ─── Step 6: Build and Run the Agent ─────────────────────────────────────────
 
 
-def build_agent(provider: str = "openai", model_name: str = None):
+def build_agent(provider: str = "openai", model_name: Optional[str] = None):
     """
     Assembles the full agent from its parts.
 
@@ -323,6 +351,7 @@ def build_agent(provider: str = "openai", model_name: str = None):
         verbose=False,  # ← turn off LangChain's built-in handler
         max_iterations=6,  # Safety limit — prevents infinite loops
         handle_parsing_errors=True,  # Gracefully handles malformed LLM output
+        return_intermediate_steps=True,  # Surfaces tool call data
     )
 
     return executor
@@ -331,7 +360,7 @@ def build_agent(provider: str = "openai", model_name: str = None):
 def run_supply_chain_monitor(
     query: str,
     provider: str = "openai",
-    model_name: str = None,
+    model_name: Optional[str] = None,
     require_approval: bool = True,
 ):
     """

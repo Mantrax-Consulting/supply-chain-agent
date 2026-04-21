@@ -27,7 +27,7 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 MODEL_NAMES = {
     "openai": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
     "anthropic": os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022"),
-    "google": os.getenv("GOOGLE_MODEL", "gemini-2.0-flash"),
+    "google": os.getenv("GOOGLE_MODEL", "gemini-3-flash-preview"),
 }
 
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.0"))
