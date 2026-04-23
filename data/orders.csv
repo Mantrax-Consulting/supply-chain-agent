@@ -1,0 +1,9 @@
+order_id,customer,product,origin,value_usd,ship_date
+ORD-1001,Acme Corp,Electronics,China,145000,2026-05-01
+ORD-1002,Globex,Pharma,Europe,87000,2026-04-28
+ORD-1003,Initech,Machinery,Germany,312000,2026-05-03
+ORD-1004,Umbrella,Textiles,Asia Pacific,45000,2026-04-30
+ORD-1005,Soylent,Chemicals,Middle East,98000,2026-05-05
+ORD-1006,Hooli,Food,North America,22000,2026-04-29
+ORD-1007,Wayne,Electronics,China,156000,2026-05-02
+ORD-1008,Stark,Machinery,Europe,210000,2026-04-27
